@@ -2,7 +2,7 @@
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 
-#define BUTTON_PIN 15
+#define BUTTON_PIN 15 // points to GP#, not pin#
 #define LED_PIN    16
 
 // ~100ms debounce time (in microseconds)
