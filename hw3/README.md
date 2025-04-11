@@ -2,11 +2,7 @@
 
 See code in `hw3.c`, and demo video below:
 
-
-[Watch the demo video here](IMG_2584.MOV)
-
-
 <video controls>
-    <source src="IMG_2584.MOV" type="video/quicktime">
-    Your browser does not support the video tag.
+    <source src="hw3.mp4" type="video/mp4">
+    Your browser does not support the video tag. You can [download the video here](hw3.mp4).
 </video>
