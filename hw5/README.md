@@ -2,8 +2,8 @@
 
 See more details in `hw5.c`
 
-Floating point math timing:    
+## Floating point math timing:    
 ![screenshot](screenshot.png)
 
-Oscilloscope output:
+## Oscilloscope output:
 ![scope](oscilloscope.jpg)
