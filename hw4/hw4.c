@@ -50,6 +50,7 @@ int main() {
     const int triangle_samples_per_cycle = 100;
     int triangle_index = 0; // Ranges from 0 to 99 over one full cycle.
 
+    // it takes time to write to dac, and lower baud rate means slower write time -> potentially greater waveform distortion - unless we use interrupt
     while (true) {
         /////////// Channel A: 2 Hz Sine Wave ///////////
         // Compute the sine wave sample.
