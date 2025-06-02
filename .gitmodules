@@ -1,3 +1,6 @@
 [submodule "ME433.Kitchen"]
 	path = ME433.Kitchen
 	url = git@github.com:ndm736/ME433.Kitchen.git
+[submodule "pixy2"]
+	path = pixy2
+	url = https://github.com/charmedlabs/pixy2
