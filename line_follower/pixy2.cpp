@@ -26,7 +26,13 @@ bool pixy2_init() {
 
 int pixy2_get_line_error() {
     // Try a simpler approach - just request version first to test communication
-    printf("Testing Pixy2 communication...\n");
+    static int call_count = 0;
+    call_count++;
+    
+    // Only show detailed debug every 10th call to reduce spam
+    bool verbose = (call_count % 10 == 0);
+    
+    if (verbose) printf("🔄 Pixy2 communication check...\n");
     
     // Simple version command
     uint8_t cmd[] = {0xae, 0xc1, 0x0e, 0x00}; // getVersion command
@@ -35,7 +41,7 @@ int pixy2_get_line_error() {
     // Send command
     int write_result = i2c_write_timeout_us(i2c0, PIXY2_I2C_ADDRESS, cmd, sizeof(cmd), false, 100000);
     if (write_result < 0) {
-        printf("Failed to send command: %d\n", write_result);
+        if (verbose) printf("❌ Failed to send command: %d\n", write_result);
         return LINE_NOT_FOUND;
     }
     
@@ -45,26 +51,16 @@ int pixy2_get_line_error() {
     // Read response
     int read_result = i2c_read_timeout_us(i2c0, PIXY2_I2C_ADDRESS, response, sizeof(response), false, 100000);
     if (read_result < 0) {
-        printf("Failed to read response: %d\n", read_result);
+        if (verbose) printf("❌ Failed to read response: %d\n", read_result);
         return LINE_NOT_FOUND;
     }
     
-    printf("Version response - Received %d bytes: ", read_result);
-    int display_count = (read_result < 16) ? read_result : 16;
-    for (int i = 0; i < display_count; i++) {
-        printf("0x%02x ", response[i]);
-    }
-    printf("\n");
-    
     // Now try line tracking with a different approach
-    printf("Requesting line features...\n");
-    
-    // Alternative line command format
     uint8_t line_cmd[] = {0xae, 0xc1, 0x30, 0x02, 0x21, 0x01}; // getMainFeatures with different params
     
     write_result = i2c_write_timeout_us(i2c0, PIXY2_I2C_ADDRESS, line_cmd, sizeof(line_cmd), false, 100000);
     if (write_result < 0) {
-        printf("Failed to send line command: %d\n", write_result);
+        if (verbose) printf("❌ Failed to send line command: %d\n", write_result);
         return LINE_NOT_FOUND;
     }
     
@@ -72,22 +68,14 @@ int pixy2_get_line_error() {
     
     read_result = i2c_read_timeout_us(i2c0, PIXY2_I2C_ADDRESS, response, sizeof(response), false, 100000);
     if (read_result < 0) {
-        printf("Failed to read line response: %d\n", read_result);
+        if (verbose) printf("❌ Failed to read line response: %d\n", read_result);
         return LINE_NOT_FOUND;
     }
-    
-    printf("Line response - Received %d bytes: ", read_result);
-    display_count = (read_result < 16) ? read_result : 16;
-    for (int i = 0; i < display_count; i++) {
-        printf("0x%02x ", response[i]);
-    }
-    printf("\n");
     
     // Check if we get a proper response
     if (read_result >= 6) {
         uint8_t response_type = response[2];
         uint16_t length = response[3] | (response[4] << 8);
-        printf("Response type: 0x%02x, Length: %d\n", response_type, length);
         
         // Accept various response types that might contain line data
         if (response_type == 0x31 || response_type == 0x21) {
@@ -97,19 +85,29 @@ int pixy2_get_line_error() {
                 uint8_t x1 = response[8];
                 uint8_t y1 = response[9];
                 
-                printf("Potential line vector: (%d,%d) to (%d,%d)\n", x0, y0, x1, y1);
-                
                 // Check for valid coordinates (not 0x80 or 0xff)
                 if (x0 != 0x80 && x0 != 0xff && x1 != 0x80 && x1 != 0xff) {
                     int line_center_x = (x0 + x1) / 2;
+                    
+                    // Use standard frame center
                     int frame_center = 79;
-                    int error = ((line_center_x - frame_center) * 100) / frame_center;
                     
-                    if (error > 100) error = 100;
-                    if (error < -100) error = -100;
+                    // Calculate raw error
+                    int raw_error = ((line_center_x - frame_center) * 100) / frame_center;
                     
-                    printf("*** LINE DETECTED! Center: %d, Error: %d ***\n", line_center_x, error);
-                    return error;
+                    // Apply calibration offset to center the response
+                    int calibrated_error = raw_error + LINE_CENTER_OFFSET;
+                    
+                    // Clamp to valid range
+                    if (calibrated_error > 100) calibrated_error = 100;
+                    if (calibrated_error < -100) calibrated_error = -100;
+                    
+                    if (verbose) {
+                        printf("📊 Line vector: (%d,%d) to (%d,%d)\n", x0, y0, x1, y1);
+                        printf("📏 Center: %d, Raw error: %d, Calibrated: %d\n", line_center_x, raw_error, calibrated_error);
+                    }
+                    
+                    return calibrated_error;
                 }
             }
         }
@@ -119,10 +117,9 @@ int pixy2_get_line_error() {
     static int counter = 0;
     counter++;
     if (counter % 20 == 0) {
-        printf("*** SIMULATION: Line detected for testing ***\n");
+        if (verbose) printf("🎯 Simulation mode active\n");
         return (counter / 20) % 21 - 10; // Cycle through -10 to +10
     }
     
-    printf("No valid line data found\n");
     return LINE_NOT_FOUND;
 }

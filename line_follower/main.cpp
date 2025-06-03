@@ -2,7 +2,6 @@
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
 #include "hardware/gpio.h"
-#include <cmath> // For std::abs
 #include "config.h"
 #include "pixy2.h"
 
@@ -11,168 +10,48 @@ uint32_t last_line_time = 0;
 bool searching = false;
 int search_direction = 1;  // 1 for right, -1 for left
 
-// Motor diagnostic functions
-void print_motor_diagnostics() {
-    printf("\n=== MOTOR CONFIGURATION DIAGNOSTICS ===\n");
-    printf("Motor A Phase Pin (GP%d): %s\n", MOTOR_A_PHASE, 
-           gpio_get_dir(MOTOR_A_PHASE) == GPIO_OUT ? "OUTPUT" : "INPUT");
-    printf("Motor B Phase Pin (GP%d): %s\n", MOTOR_B_PHASE, 
-           gpio_get_dir(MOTOR_B_PHASE) == GPIO_OUT ? "OUTPUT" : "INPUT");
-    
-    printf("Motor A Enable Pin (GP%d): PWM Function\n", MOTOR_A_ENABLE);
-    printf("Motor B Enable Pin (GP%d): PWM Function\n", MOTOR_B_ENABLE);
-    
-    uint slice_a = pwm_gpio_to_slice_num(MOTOR_A_ENABLE);
-    uint slice_b = pwm_gpio_to_slice_num(MOTOR_B_ENABLE);
-    printf("PWM Slice A: %d, Slice B: %d\n", slice_a, slice_b);
-    
-    printf("PWM Wrap Value: %d\n", PWM_WRAP_VALUE);
-    printf("PWM Clock Divider: %.1f\n", PWM_CLOCK_DIVIDER);
-    printf("Expected PWM Frequency: %d Hz\n", PWM_FREQUENCY_HZ);
-    printf("========================================\n\n");
-}
-
-void print_drv8835_mode_info() {
-    printf("\n=== DRV8835 MODE CONFIGURATION ===\n");
-    printf("Current code assumes PH/EN mode:\n");
-    printf("- PHASE pin (GP%d & GP%d): Controls direction\n", MOTOR_A_PHASE, MOTOR_B_PHASE);
-    printf("- ENABLE pin (GP%d & GP%d): Controls speed via PWM\n", MOTOR_A_ENABLE, MOTOR_B_ENABLE);
-    printf("\nDRV8835 MODE pin must be connected to VCC for PH/EN mode!\n");
-    printf("If MODE pin is connected to GND, you're in IN/IN mode.\n");
-    printf("===================================\n\n");
-}
-
-// Enhanced motor control functions using PH/EN mode
+// Motor control functions for PH/EN mode (MODE=HIGH)
 void set_motors(int left_speed, int right_speed) {
-    // Clamp speeds to the range [-MAX_SPEED, MAX_SPEED]
+    // Clamp speeds to valid range
     if (left_speed > MAX_SPEED) left_speed = MAX_SPEED;
     if (left_speed < -MAX_SPEED) left_speed = -MAX_SPEED;
     if (right_speed > MAX_SPEED) right_speed = MAX_SPEED;
     if (right_speed < -MAX_SPEED) right_speed = -MAX_SPEED;
     
-    printf("Setting motors (PH/EN): L_speed=%d, R_speed=%d\n", left_speed, right_speed);
-
-    // Calculate PWM duty cycles (0 to PWM_WRAP_VALUE)
-    uint16_t left_pwm = static_cast<uint16_t>((std::abs(left_speed) * PWM_WRAP_VALUE) / MAX_SPEED);
-    uint16_t right_pwm = static_cast<uint16_t>((std::abs(right_speed) * PWM_WRAP_VALUE) / MAX_SPEED);
-
-    // Motor A (Left)
-    if (left_speed > 0) { // Forward
-        gpio_put(MOTOR_A_PHASE, 1);
-        pwm_set_gpio_level(MOTOR_A_ENABLE, left_pwm);
-        printf("Motor A: FWD, PH=1, EN_PWM=%u (%.1f%%)\n", left_pwm, (float)left_pwm/PWM_WRAP_VALUE*100);
-    } else if (left_speed < 0) { // Reverse
-        gpio_put(MOTOR_A_PHASE, 0);
-        pwm_set_gpio_level(MOTOR_A_ENABLE, left_pwm);
-        printf("Motor A: REV, PH=0, EN_PWM=%u (%.1f%%)\n", left_pwm, (float)left_pwm/PWM_WRAP_VALUE*100);
-    } else { // Stop
-        gpio_put(MOTOR_A_PHASE, 0);
-        pwm_set_gpio_level(MOTOR_A_ENABLE, 0);
-        printf("Motor A: STOP, EN_PWM=0\n");
+    printf("Setting motors: L=%d, R=%d\n", left_speed, right_speed);
+    
+    // Motor A (Left) - PH/EN mode
+    if (left_speed >= 0) {
+        // Forward: PH=HIGH, EN=PWM
+        gpio_put(MOTOR_A_PH, 1);
+        pwm_set_gpio_level(MOTOR_A_EN, left_speed);
+        printf("Motor A: Forward PH=1, EN=%d\n", left_speed);
+    } else {
+        // Reverse: PH=LOW, EN=PWM
+        gpio_put(MOTOR_A_PH, 0);
+        pwm_set_gpio_level(MOTOR_A_EN, -left_speed);
+        printf("Motor A: Reverse PH=0, EN=%d\n", -left_speed);
     }
     
-    // Motor B (Right)
-    if (right_speed > 0) { // Forward
-        gpio_put(MOTOR_B_PHASE, 1);
-        pwm_set_gpio_level(MOTOR_B_ENABLE, right_pwm);
-        printf("Motor B: FWD, PH=1, EN_PWM=%u (%.1f%%)\n", right_pwm, (float)right_pwm/PWM_WRAP_VALUE*100);
-    } else if (right_speed < 0) { // Reverse
-        gpio_put(MOTOR_B_PHASE, 0);
-        pwm_set_gpio_level(MOTOR_B_ENABLE, right_pwm);
-        printf("Motor B: REV, PH=0, EN_PWM=%u (%.1f%%)\n", right_pwm, (float)right_pwm/PWM_WRAP_VALUE*100);
-    } else { // Stop
-        gpio_put(MOTOR_B_PHASE, 0);
-        pwm_set_gpio_level(MOTOR_B_ENABLE, 0);
-        printf("Motor B: STOP, EN_PWM=0\n");
+    // Motor B (Right) - PH/EN mode
+    if (right_speed >= 0) {
+        // Forward: PH=HIGH, EN=PWM
+        gpio_put(MOTOR_B_PH, 1);
+        pwm_set_gpio_level(MOTOR_B_EN, right_speed);
+        printf("Motor B: Forward PH=1, EN=%d\n", right_speed);
+    } else {
+        // Reverse: PH=LOW, EN=PWM
+        gpio_put(MOTOR_B_PH, 0);
+        pwm_set_gpio_level(MOTOR_B_EN, -right_speed);
+        printf("Motor B: Reverse PH=0, EN=%d\n", -right_speed);
     }
 }
 
 void stop_motors() {
-    gpio_put(MOTOR_A_PHASE, 0);
-    pwm_set_gpio_level(MOTOR_A_ENABLE, 0);
-    gpio_put(MOTOR_B_PHASE, 0);
-    pwm_set_gpio_level(MOTOR_B_ENABLE, 0);
-    printf("Motors stopped (PH/EN mode)\n");
-}
-
-// Comprehensive motor test function for PH/EN mode
-void motor_test_ph_en() {
-    printf("\n=== COMPREHENSIVE MOTOR TEST (PH/EN MODE) ===\n");
-    
-    printf("Test 1: Motor A Forward\n");
-    set_motors(MOTOR_TEST_SPEED, 0);
-    sleep_ms(MOTOR_TEST_DURATION_MS);
-    stop_motors();
-    sleep_ms(500);
-    
-    printf("Test 2: Motor A Reverse\n");
-    set_motors(-MOTOR_TEST_SPEED, 0);
-    sleep_ms(MOTOR_TEST_DURATION_MS);
-    stop_motors();
-    sleep_ms(500);
-    
-    printf("Test 3: Motor B Forward\n");
-    set_motors(0, MOTOR_TEST_SPEED);
-    sleep_ms(MOTOR_TEST_DURATION_MS);
-    stop_motors();
-    sleep_ms(500);
-    
-    printf("Test 4: Motor B Reverse\n");
-    set_motors(0, -MOTOR_TEST_SPEED);
-    sleep_ms(MOTOR_TEST_DURATION_MS);
-    stop_motors();
-    sleep_ms(500);
-    
-    printf("Test 5: Both Motors Forward\n");
-    set_motors(MOTOR_TEST_SPEED, MOTOR_TEST_SPEED);
-    sleep_ms(MOTOR_TEST_DURATION_MS);
-    stop_motors();
-    sleep_ms(500);
-    
-    printf("Test 6: Both Motors Reverse\n");
-    set_motors(-MOTOR_TEST_SPEED, -MOTOR_TEST_SPEED);
-    sleep_ms(MOTOR_TEST_DURATION_MS);
-    stop_motors();
-    sleep_ms(500);
-    
-    printf("Test 7: Turn Left (Right motor forward, Left motor reverse)\n");
-    set_motors(-MOTOR_TEST_SPEED, MOTOR_TEST_SPEED);
-    sleep_ms(MOTOR_TEST_DURATION_MS);
-    stop_motors();
-    sleep_ms(500);
-    
-    printf("Test 8: Turn Right (Left motor forward, Right motor reverse)\n");
-    set_motors(MOTOR_TEST_SPEED, -MOTOR_TEST_SPEED);
-    sleep_ms(MOTOR_TEST_DURATION_MS);
-    stop_motors();
-    sleep_ms(500);
-    
-    printf("=== MOTOR TEST COMPLETE ===\n\n");
-}
-
-// PWM ramp test for debugging
-void pwm_ramp_test() {
-    printf("\n=== PWM RAMP TEST ===\n");
-    printf("Testing Motor A with PWM ramp...\n");
-    
-    gpio_put(MOTOR_A_PHASE, 1); // Forward direction
-    
-    // Ramp up
-    for (int i = 0; i <= PWM_WRAP_VALUE; i += PWM_WRAP_VALUE/10) {
-        pwm_set_gpio_level(MOTOR_A_ENABLE, i);
-        printf("PWM Level: %d (%.1f%%)\n", i, (float)i/PWM_WRAP_VALUE*100);
-        sleep_ms(500);
-    }
-    
-    // Ramp down
-    for (int i = PWM_WRAP_VALUE; i >= 0; i -= PWM_WRAP_VALUE/10) {
-        pwm_set_gpio_level(MOTOR_A_ENABLE, i);
-        printf("PWM Level: %d (%.1f%%)\n", i, (float)i/PWM_WRAP_VALUE*100);
-        sleep_ms(500);
-    }
-    
-    stop_motors();
-    printf("=== PWM RAMP TEST COMPLETE ===\n\n");
+    // Stop: Set EN pins to 0 (PH doesn't matter when stopped)
+    pwm_set_gpio_level(MOTOR_A_EN, 0);
+    pwm_set_gpio_level(MOTOR_B_EN, 0);
+    printf("Motors stopped\n");
 }
 
 void search_for_line() {
@@ -192,148 +71,107 @@ void search_for_line() {
 }
 
 void follow_line(int error) {
-    // Simple proportional control
-    int turn_speed = error * KP;
-    int left_speed = BASE_SPEED - turn_speed;
-    int right_speed = BASE_SPEED + turn_speed;
+    // Simple differential steering
+    // error: negative = line left, positive = line right
     
-    printf("Line following: error=%d, turn_speed=%d\n", error, turn_speed);
-    printf("Before limits: left=%d, right=%d\n", left_speed, right_speed);
+    int base_speed = BASE_SPEED;
+    int turn_adjustment = error * KP; // Don't multiply by KP yet, keep it simple
+    
+    // Calculate motor speeds
+    int left_speed = base_speed - turn_adjustment;   // If error<0 (line left), left_speed increases
+    int right_speed = base_speed + turn_adjustment;  // If error<0 (line left), right_speed decreases
     
     // Clamp speeds to valid range
     if (left_speed > MAX_SPEED) left_speed = MAX_SPEED;
     if (left_speed < -MAX_SPEED) left_speed = -MAX_SPEED;
     if (right_speed > MAX_SPEED) right_speed = MAX_SPEED;
     if (right_speed < -MAX_SPEED) right_speed = -MAX_SPEED;
-
-    // Ensure minimum speed for both motors if they are supposed to be moving
-    if (left_speed != 0) {
-        if (left_speed > 0 && left_speed < MIN_SPEED) left_speed = MIN_SPEED;
-        if (left_speed < 0 && left_speed > -MIN_SPEED) left_speed = -MIN_SPEED;
-    }
-    if (right_speed != 0) {
-        if (right_speed > 0 && right_speed < MIN_SPEED) right_speed = MIN_SPEED;
-        if (right_speed < 0 && right_speed > -MIN_SPEED) right_speed = -MIN_SPEED;
-    }
     
-    printf("Final motor speeds: left=%d, right=%d\n", left_speed, right_speed);
+    printf("→ Motors: L=%d R=%d\n", left_speed, right_speed);
+    
     set_motors(left_speed, right_speed);
     searching = false;
 }
 
 bool init_hardware() {
-    printf("Initializing motor hardware...\n");
+    // Configure PH pins as digital outputs for direction control
+    gpio_init(MOTOR_A_PH);
+    gpio_init(MOTOR_B_PH);
+    gpio_set_dir(MOTOR_A_PH, GPIO_OUT);
+    gpio_set_dir(MOTOR_B_PH, GPIO_OUT);
     
-    // Configure PHASE pins as digital outputs
-    gpio_init(MOTOR_A_PHASE);
-    gpio_set_dir(MOTOR_A_PHASE, GPIO_OUT);
-    gpio_put(MOTOR_A_PHASE, 0); // Initialize to low
+    // Configure EN pins as PWM for speed control
+    gpio_set_function(MOTOR_A_EN, GPIO_FUNC_PWM);
+    gpio_set_function(MOTOR_B_EN, GPIO_FUNC_PWM);
     
-    gpio_init(MOTOR_B_PHASE);
-    gpio_set_dir(MOTOR_B_PHASE, GPIO_OUT);
-    gpio_put(MOTOR_B_PHASE, 0); // Initialize to low
-
-    // Configure ENABLE pins for PWM
-    gpio_set_function(MOTOR_A_ENABLE, GPIO_FUNC_PWM);
-    gpio_set_function(MOTOR_B_ENABLE, GPIO_FUNC_PWM);
-
-    uint slice_a_en = pwm_gpio_to_slice_num(MOTOR_A_ENABLE);
-    uint slice_b_en = pwm_gpio_to_slice_num(MOTOR_B_ENABLE);
-
-    pwm_config config = pwm_get_default_config();
-    pwm_config_set_clkdiv(&config, PWM_CLOCK_DIVIDER);
-    pwm_config_set_wrap(&config, PWM_WRAP_VALUE);
-
-    // Initialize PWM for both slices
-    pwm_init(slice_a_en, &config, true);
-    if (slice_a_en != slice_b_en) {
-        pwm_init(slice_b_en, &config, true);
-    }
+    // Set PWM wrap value (0-255 range) for EN pins
+    pwm_set_wrap(pwm_gpio_to_slice_num(MOTOR_A_EN), 255);
+    pwm_set_wrap(pwm_gpio_to_slice_num(MOTOR_B_EN), 255);
     
-    // Ensure both PWM outputs are enabled
-    pwm_set_enabled(slice_a_en, true);
-    if (slice_a_en != slice_b_en) {
-        pwm_set_enabled(slice_b_en, true);
-    }
+    // Enable PWM on EN pins
+    pwm_set_enabled(pwm_gpio_to_slice_num(MOTOR_A_EN), true);
+    pwm_set_enabled(pwm_gpio_to_slice_num(MOTOR_B_EN), true);
     
     // Start with motors stopped
     stop_motors();
     
-    printf("Motor control initialized (PH/EN mode)\n");
-    printf("PWM Wrap: %d, Clock Divider: %.1f\n", PWM_WRAP_VALUE, PWM_CLOCK_DIVIDER);
-    printf("Calculated PWM Frequency: %.1f Hz\n", 125000000.0f / (PWM_CLOCK_DIVIDER * (PWM_WRAP_VALUE + 1)));
-    
+    printf("Motor control initialized (PH/EN mode - MODE=HIGH)\n");
     return true;
 }
 
 int main() {
     stdio_init_all();
-
-    // Wait for USB connection
-    while (!stdio_usb_connected()) {
-        sleep_ms(100);
-    }
-    printf("USB connected. Starting program...\n");
     
-    printf("Line Follower Bot Starting...\n");
-    
-    // Print diagnostic information
-    print_drv8835_mode_info();
+    printf("\n");
+    printf("========================================\n");
+    printf("        LINE FOLLOWER BOT v1.0         \n");
+    printf("========================================\n");
     
     // Initialize hardware
     if (!init_hardware()) {
-        printf("Hardware initialization failed!\n");
+        printf("ERROR: Hardware initialization failed!\n");
         return -1;
     }
     
-    // Print motor diagnostics
-    print_motor_diagnostics();
-    
     // Initialize Pixy2
     if (!pixy2_init()) {
-        printf("Pixy2 initialization failed! Continuing anyway...\n");
-        printf("You can still test motor control manually\n");
+        printf("ERROR: Pixy2 initialization failed!\n");
+        return -1;
     }
     
-    // Run motor tests if enabled
-    if (MOTOR_TEST_ENABLED) {
-        printf("Running motor tests...\n");
-        motor_test_ph_en();
-        pwm_ramp_test();
-        printf("Motor tests complete. Starting line following...\n");
-    }
+    printf("✓ Initialization complete\n");
+    printf("Starting line following in 2 seconds...\n");
+    printf("========================================\n\n");
+    sleep_ms(2000);
     
-    printf("===== STARTING LINE FOLLOWING MODE =====\n");
-    printf("The robot will:\n");
-    printf("- Follow lines when detected by Pixy2\n");
-    printf("- Search by spinning when no line is found\n");
-    printf("- Stop after %d ms of no line detection\n", SEARCH_TIMEOUT_MS);
-    printf("==========================================\n");
-    
-    sleep_ms(1000);
-
     // Main control loop
     while (true) {
         uint32_t current_time = to_ms_since_boot(get_absolute_time());
         
+        // Get line position from Pixy2
         int line_error = pixy2_get_line_error();
         
         if (line_error == LINE_NOT_FOUND) {
+            // No line detected
             if (!searching) {
                 searching = true;
                 last_line_time = current_time;
-                printf("Line lost, starting search\n");
+                printf("🔍 SEARCHING for line...\n");
             }
             
+            // Check if we've been searching too long
             if (current_time - last_line_time > SEARCH_TIMEOUT_MS) {
-                printf("Search timeout, stopping motors\n");
+                printf("⏰ Search timeout - stopping\n");
                 stop_motors();
                 sleep_ms(1000);
                 last_line_time = current_time;
             } else {
-                 search_for_line();
+                // Simple search pattern
+                set_motors(-60, 60); // Spin to search
             }
         } else {
+            // Line detected
+            printf("📍 LINE: Error=%d ", line_error);
             last_line_time = current_time;
             follow_line(line_error);
         }
