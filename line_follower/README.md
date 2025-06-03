@@ -6,6 +6,10 @@ I'm writing this readme after finishing the entire project so I'll just use the 
 
 
 
+https://github.com/user-attachments/assets/e58d95ae-5d26-47d0-9943-8fb3a3d217e1
+
+
+
 ## CAD image:
 
 ![CAD](CAD.png)
@@ -59,6 +63,7 @@ USB Power ----+
        │              │   │   └─────────────┘
        │              │   │
        └──────────────┴───┴─── COMMON GND
+       
 ```
 
 ### Pin Assignments
